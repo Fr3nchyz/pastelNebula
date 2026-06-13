@@ -545,6 +545,7 @@ let chimeFB      = null;
 let audioActive  = false;
 let crackleTO    = null;
 let padOscs      = [];
+let shimmerOscs  = [];
 let chordTO      = null;
 let chordIdx     = 0;
 
@@ -584,13 +585,14 @@ function buildAudio() {
   chimeFB.connect(chimeDelay);
   chimeDelay.connect(masterGain);
 
-  // ── Ambient pad: Rhodes-style warm sines, 2 per voice detuned ±5 cents ──
+  // ── Ambient pad: psychedelic sine chorus with tremolo, vibrato, shimmer ──
   const padLPF = actx.createBiquadFilter();
   padLPF.type            = 'lowpass';
   padLPF.frequency.value = 700;
   padLPF.Q.value         = 2;
   padLPF.connect(padGain);
 
+  // Filter cutoff drift (slow organic sweep)
   const lfo    = actx.createOscillator();
   lfo.type             = 'sine';
   lfo.frequency.value  = 0.06;
@@ -600,9 +602,29 @@ function buildAudio() {
   lfoAmt.connect(padLPF.frequency);
   lfo.start();
 
+  // Tremolo: slow amplitude swell at ~0.11Hz — the pulsing organ feel
+  const tremoloLFO   = actx.createOscillator();
+  tremoloLFO.type            = 'sine';
+  tremoloLFO.frequency.value = 0.11;
+  const tremoloDepth = actx.createGain();
+  tremoloDepth.gain.value    = 0.18;
+  tremoloLFO.connect(tremoloDepth);
+  tremoloDepth.connect(padGain.gain);
+  tremoloLFO.start();
+
+  // Vibrato: micro-pitch drift across all voices for organic warmth
+  const vibratoLFO   = actx.createOscillator();
+  vibratoLFO.type            = 'sine';
+  vibratoLFO.frequency.value = 0.17;
+  const vibratoDepth = actx.createGain();
+  vibratoDepth.gain.value    = 2.5;
+  vibratoLFO.connect(vibratoDepth);
+  vibratoLFO.start();
+
+  // 8 detuned sines, 2 per chord voice at ±12 cents — wide chorus spread
   padOscs = [];
   CHORDS[0].forEach(f => {
-    [-5, 5].forEach(cents => {
+    [-12, 12].forEach(cents => {
       const osc = actx.createOscillator();
       osc.type            = 'sine';
       osc.frequency.value = f * Math.pow(2, cents / 1200);
@@ -610,30 +632,66 @@ function buildAudio() {
       og.gain.value = 0.09;
       osc.connect(og);
       og.connect(padLPF);
+      vibratoDepth.connect(osc.frequency);
       osc.start();
       padOscs.push(osc);
     });
   });
 
-  // ── Brownian noise rain (2-second looping buffer) ──
+  // Shimmer: same chord one octave up at very low gain — airy psychedelic overtone
+  shimmerOscs = [];
+  CHORDS[0].forEach(f => {
+    const osc = actx.createOscillator();
+    osc.type            = 'sine';
+    osc.frequency.value = f * 2;
+    const og = actx.createGain();
+    og.gain.value = 0.032;
+    osc.connect(og);
+    og.connect(padLPF);
+    osc.start();
+    shimmerOscs.push(osc);
+  });
+
+  // ── Rain: white noise split into high "shhh" and low "whoosh" paths ──
   const sr      = actx.sampleRate;
-  const rainBuf = actx.createBuffer(1, sr * 2, sr);
+  const rainBuf = actx.createBuffer(1, sr * 3, sr);
   const rd      = rainBuf.getChannelData(0);
-  let last      = 0;
-  for (let i = 0; i < sr * 2; i++) {
-    // Integrate white noise with drift correction
-    last    = Math.max(-1, Math.min(1, (last + (Math.random() * 2 - 1) * 0.1) * 0.998));
-    rd[i]   = last;
-  }
+  for (let i = 0; i < sr * 3; i++) rd[i] = Math.random() * 2 - 1; // pure white noise
+
+  // High path: band-pass at 3.2kHz — the airy "shhh" of rain on leaves/glass
+  const rainBPF = actx.createBiquadFilter();
+  rainBPF.type            = 'bandpass';
+  rainBPF.frequency.value = 3200;
+  rainBPF.Q.value         = 1.8;
+  const rainHiG = actx.createGain();
+  rainHiG.gain.value = 0.7;
+  rainBPF.connect(rainHiG);
+  rainHiG.connect(rainGain);
+
+  // Low path: low-pass at 500Hz — distant rumble and body
   const rainLPF = actx.createBiquadFilter();
-  rainLPF.type           = 'lowpass';
-  rainLPF.frequency.value = 380;
-  rainLPF.Q.value         = 1.2;
-  rainLPF.connect(rainGain);
+  rainLPF.type            = 'lowpass';
+  rainLPF.frequency.value = 500;
+  rainLPF.Q.value         = 0.8;
+  const rainLoG = actx.createGain();
+  rainLoG.gain.value = 0.3;
+  rainLPF.connect(rainLoG);
+  rainLoG.connect(rainGain);
+
+  // Slow gust swell at 0.35Hz so it breathes rather than droning flat
+  const rainTrem = actx.createOscillator();
+  rainTrem.type            = 'sine';
+  rainTrem.frequency.value = 0.35;
+  const rainTremD = actx.createGain();
+  rainTremD.gain.value = 0.2;
+  rainTrem.connect(rainTremD);
+  rainTremD.connect(rainHiG.gain);
+  rainTrem.start();
 
   const rainSrc = actx.createBufferSource();
   rainSrc.buffer = rainBuf;
   rainSrc.loop   = true;
+  rainSrc.connect(rainBPF);
   rainSrc.connect(rainLPF);
   rainSrc.start();
 }
@@ -641,26 +699,33 @@ function buildAudio() {
 function scheduleCrackle() {
   if (!audioActive) return;
   crackleTO = setTimeout(() => {
-    if (audioActive) { fireCrackle(); scheduleCrackle(); }
-  }, Math.random() * 400 + 75);
+    if (!audioActive) return;
+    fireCrackle();
+    // Occasional cluster: 2-3 pops in quick succession like a vinyl groove skip
+    if (Math.random() < 0.25) {
+      setTimeout(() => audioActive && fireCrackle(), Math.random() * 25 + 10);
+      if (Math.random() < 0.4) setTimeout(() => audioActive && fireCrackle(), Math.random() * 55 + 35);
+    }
+    scheduleCrackle();
+  }, Math.random() * 700 + 150);
 }
 
 function fireCrackle() {
   if (!actx) return;
-  // Short micro-impulse: high-frequency pop simulating vinyl dust
-  const n   = Math.floor(actx.sampleRate * 0.013);
+  // 6ms impulse — short enough to be a crisp pop, not a harsh click
+  const n   = Math.floor(actx.sampleRate * 0.006);
   const buf = actx.createBuffer(1, n, actx.sampleRate);
   const d   = buf.getChannelData(0);
   for (let i = 0; i < n; i++) {
-    d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.11));
+    d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.08));
   }
   const src = actx.createBufferSource();
   src.buffer = buf;
   const hp  = actx.createBiquadFilter();
-  hp.type           = 'highpass';
-  hp.frequency.value = 7000;
+  hp.type            = 'highpass';
+  hp.frequency.value = 4000; // warmer than 7kHz — sounds like real vinyl
   const env = actx.createGain();
-  env.gain.value = Math.random() * 0.32 + 0.06;
+  env.gain.value = Math.random() * 0.12 + 0.03; // subtle, sits behind the pad
   src.connect(hp);
   hp.connect(env);
   env.connect(crackleGain);
@@ -695,8 +760,9 @@ function scheduleNextChord() {
     const now   = actx.currentTime;
     for (let v = 0; v < 4; v++) {
       const f = chord[v];
-      padOscs[v * 2    ].frequency.linearRampToValueAtTime(f * Math.pow(2, -5 / 1200), now + 2.5);
-      padOscs[v * 2 + 1].frequency.linearRampToValueAtTime(f * Math.pow(2,  5 / 1200), now + 2.5);
+      padOscs[v * 2    ].frequency.linearRampToValueAtTime(f * Math.pow(2, -12 / 1200), now + 2.5);
+      padOscs[v * 2 + 1].frequency.linearRampToValueAtTime(f * Math.pow(2,  12 / 1200), now + 2.5);
+      if (shimmerOscs[v]) shimmerOscs[v].frequency.linearRampToValueAtTime(f * 2, now + 2.5);
     }
     scheduleNextChord();
   }, 8000);
