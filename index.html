@@ -145,6 +145,9 @@ input[type=range].mx-sl::-moz-range-thumb{
       <span class="mode-sub">Click to detonate expanding shockwaves</span>
     </button>
     <div id="pearl-count">Pearls: 0 / 6</div>
+    <button class="mode-btn" id="scatter-btn" style="border-color:rgba(255,255,255,0.12);margin-top:4px">
+      ↗ Scatter Particles
+    </button>
   </div>
 
   <div class="sep"></div>
@@ -274,6 +277,7 @@ function scatterParticles() {
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let mode = 'paintbrush';
+let frameCount = 0;
 const mouse = { x:0, y:0, active:false };
 
 // Pearl anchors — flat parallel arrays, no heap alloc per pearl
@@ -413,6 +417,11 @@ function updateParticles() {
       }
     }
 
+    // Ambient wander: always-on quasi-noise steering so particles never freeze
+    const wA = frameCount * 0.007 + i * 1.6180339;
+    ax += Math.sin(wA)        * 0.0035;
+    ay += Math.cos(wA * 0.71) * 0.0035;
+
     p.vx = (p.vx + ax) * FRICTION;
     p.vy = (p.vy + ay) * FRICTION;
 
@@ -518,6 +527,7 @@ function render() {
 
 // ─── ANIMATION LOOP ──────────────────────────────────────────────────────────
 function loop() {
+  frameCount++;
   updateParticles();
   updateRipples();
   render();
@@ -534,6 +544,15 @@ let chimeDelay   = null;
 let chimeFB      = null;
 let audioActive  = false;
 let crackleTO    = null;
+let padOscs      = [];
+let chordTO      = null;
+let chordIdx     = 0;
+
+const CHORDS = [
+  [146.83, 184.99, 220.00, 277.18],  // Dmaj7: D3 F#3 A3 C#4
+  [195.00, 220.00, 246.94, 329.63],  // Gmaj9: G3 A3 B3 E4
+  [110.00, 164.81, 220.00, 329.63],  // Asus2: A2 E3 A3 E4
+];
 
 const PENTATONIC = [261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25,784.00,880.00];
 
@@ -565,34 +584,35 @@ function buildAudio() {
   chimeFB.connect(chimeDelay);
   chimeDelay.connect(masterGain);
 
-  // ── Ambient pad: 4 triangle OSCs → shared low-pass filter ──
-  // D Major 7th/9th voicing: D2, A2, C#3, E3
-  const padFreqs = [146.83, 220.00, 277.18, 329.63];
-  const padLPF   = actx.createBiquadFilter();
-  padLPF.type           = 'lowpass';
-  padLPF.frequency.value = 450;
-  padLPF.Q.value         = 4;
+  // ── Ambient pad: Rhodes-style warm sines, 2 per voice detuned ±5 cents ──
+  const padLPF = actx.createBiquadFilter();
+  padLPF.type            = 'lowpass';
+  padLPF.frequency.value = 700;
+  padLPF.Q.value         = 2;
   padLPF.connect(padGain);
 
-  // Sub-audio LFO modulates filter cutoff — organic drift
   const lfo    = actx.createOscillator();
-  lfo.type          = 'sine';
-  lfo.frequency.value = 0.06;
+  lfo.type             = 'sine';
+  lfo.frequency.value  = 0.06;
   const lfoAmt = actx.createGain();
-  lfoAmt.gain.value = 190;
+  lfoAmt.gain.value    = 190;
   lfo.connect(lfoAmt);
   lfoAmt.connect(padLPF.frequency);
   lfo.start();
 
-  padFreqs.forEach(f => {
-    const osc = actx.createOscillator();
-    osc.type          = 'triangle';
-    osc.frequency.value = f;
-    const og = actx.createGain();
-    og.gain.value = 0.175;
-    osc.connect(og);
-    og.connect(padLPF);
-    osc.start();
+  padOscs = [];
+  CHORDS[0].forEach(f => {
+    [-5, 5].forEach(cents => {
+      const osc = actx.createOscillator();
+      osc.type            = 'sine';
+      osc.frequency.value = f * Math.pow(2, cents / 1200);
+      const og = actx.createGain();
+      og.gain.value = 0.09;
+      osc.connect(og);
+      og.connect(padLPF);
+      osc.start();
+      padOscs.push(osc);
+    });
   });
 
   // ── Brownian noise rain (2-second looping buffer) ──
@@ -650,18 +670,36 @@ function fireCrackle() {
 function triggerChime() {
   if (!actx || !audioActive) return;
   const freq = PENTATONIC[Math.floor(Math.random() * PENTATONIC.length)];
-  const osc  = actx.createOscillator();
-  osc.type           = 'sine';
-  osc.frequency.value = freq;
-  const g   = actx.createGain();
-  const now = actx.currentTime;
-  g.gain.setValueAtTime(0.46, now);
-  g.gain.exponentialRampToValueAtTime(0.0001, now + 1.9);
-  osc.connect(g);
-  g.connect(chimeDelay);
-  g.connect(masterGain);
-  osc.start(now);
-  osc.stop(now + 2.1);
+  const now  = actx.currentTime;
+  // Bell synthesis: stacked partials with distinct inharmonic ratios
+  [[1.000, 0.50, 2.0], [2.756, 0.18, 1.0], [5.404, 0.06, 0.45]].forEach(([ratio, amp, decay]) => {
+    const osc = actx.createOscillator();
+    osc.type            = 'sine';
+    osc.frequency.value = freq * ratio;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(amp, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + decay);
+    osc.connect(g);
+    g.connect(chimeDelay);
+    g.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + decay + 0.05);
+  });
+}
+
+function scheduleNextChord() {
+  chordTO = setTimeout(() => {
+    if (!audioActive || !actx) return;
+    chordIdx = (chordIdx + 1) % CHORDS.length;
+    const chord = CHORDS[chordIdx];
+    const now   = actx.currentTime;
+    for (let v = 0; v < 4; v++) {
+      const f = chord[v];
+      padOscs[v * 2    ].frequency.linearRampToValueAtTime(f * Math.pow(2, -5 / 1200), now + 2.5);
+      padOscs[v * 2 + 1].frequency.linearRampToValueAtTime(f * Math.pow(2,  5 / 1200), now + 2.5);
+    }
+    scheduleNextChord();
+  }, 8000);
 }
 
 function startAudio() {
@@ -669,11 +707,13 @@ function startAudio() {
   else if (actx.state === 'suspended') actx.resume();
   audioActive = true;
   scheduleCrackle();
+  scheduleNextChord();
 }
 
 function stopAudio() {
   audioActive = false;
   if (crackleTO) { clearTimeout(crackleTO); crackleTO = null; }
+  if (chordTO)   { clearTimeout(chordTO);   chordTO   = null; }
   if (actx && actx.state === 'running') actx.suspend();
 }
 
@@ -706,15 +746,22 @@ document.getElementById('close-btn').addEventListener('click', () => {
   pullTab.style.pointerEvents = 'auto';
 });
 
-document.querySelectorAll('.mode-btn').forEach(btn => {
+document.querySelectorAll('.mode-btn[data-mode]').forEach(btn => {
   btn.addEventListener('click', () => {
     mode = btn.dataset.mode;
     if (mode !== 'pearls') pearlCount = 0;
     if (mode !== 'ripple') ripCount   = 0;
     updatePearlUI();
-    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.mode-btn[data-mode]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
   });
+});
+
+document.getElementById('scatter-btn').addEventListener('click', () => {
+  for (let i = 0; i < POOL; i++) {
+    particles[i].vx = (Math.random() - 0.5) * 9;
+    particles[i].vy = (Math.random() - 0.5) * 9;
+  }
 });
 
 document.querySelectorAll('.swatch').forEach(sw => {
