@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Lofi Pastel Nebula Sandbox</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0f0f1e;font-family:'Courier New',Courier,monospace}
+#nebula-canvas{position:fixed;top:0;left:0;width:100%;height:100%;display:block}
+#grain-overlay{position:fixed;top:-50%;left:-50%;width:200%;height:200%;pointer-events:none;z-index:10;opacity:0.04;animation:grain .4s steps(4) infinite}
+@keyframes grain{
+  0%  {transform:translate(0,0)}
+  25% {transform:translate(-1%,-2%)}
+  50% {transform:translate(2%,1%)}
+  75% {transform:translate(-1%,3%)}
+  100%{transform:translate(1%,-1%)}
+}
+#pull-tab{
+  position:fixed;top:50%;right:0;transform:translateY(-50%);
+  width:4px;height:80px;
+  background:rgba(179,157,219,.6);
+  border-radius:2px 0 0 2px;
+  cursor:pointer;z-index:200;
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  overflow:hidden;display:flex;align-items:center;justify-content:flex-start;
+  transition:width .35s cubic-bezier(.25,.46,.45,.94),background .35s ease,border .35s ease,opacity .3s ease;
+}
+#pull-tab:hover{
+  width:172px;
+  background:rgba(179,157,219,.11);
+  border:1px solid rgba(179,157,219,.28);
+  border-right:none;
+}
+#pull-tab-text{
+  white-space:nowrap;color:rgba(255,255,255,.85);
+  font-size:10px;letter-spacing:.13em;padding-left:14px;
+  opacity:0;transition:opacity .2s ease .12s;
+}
+#pull-tab:hover #pull-tab-text{opacity:1}
+#dashboard{
+  position:fixed;top:0;right:-395px;width:375px;height:100vh;
+  background:rgba(12,12,16,.65);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border-left:1px solid rgba(255,255,255,.08);
+  z-index:190;
+  transition:right .45s cubic-bezier(.25,.46,.45,.94);
+  overflow-y:auto;overflow-x:hidden;
+  padding:22px 20px 48px;
+  display:flex;flex-direction:column;gap:20px;
+}
+#dashboard.open{right:0}
+#dashboard::-webkit-scrollbar{width:3px}
+#dashboard::-webkit-scrollbar-track{background:transparent}
+#dashboard::-webkit-scrollbar-thumb{background:rgba(179,157,219,.3);border-radius:2px}
+.db-hd{
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid rgba(255,255,255,.07);padding-bottom:16px;
+}
+.db-title{font-size:13px;letter-spacing:.08em;color:rgba(255,255,255,.75)}
+.db-title em{color:#b39ddb;font-style:normal}
+#close-btn{
+  background:none;border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.4);
+  width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:12px;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .2s ease;flex-shrink:0;
+}
+#close-btn:hover{border-color:rgba(255,255,255,.3);color:rgba(255,255,255,.7)}
+.ctrl-group{display:flex;flex-direction:column;gap:10px}
+.ctrl-lbl{font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:rgba(255,255,255,.3)}
+.mode-btn{
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+  color:rgba(255,255,255,.45);font-family:'Courier New',monospace;
+  font-size:11px;line-height:1.55;padding:10px 13px;border-radius:6px;
+  cursor:pointer;text-align:left;transition:all .2s ease;width:100%;
+}
+.mode-btn.active{background:rgba(179,157,219,.12);border-color:rgba(179,157,219,.35);color:#b39ddb}
+.mode-btn:hover:not(.active){background:rgba(255,255,255,.06);color:rgba(255,255,255,.65)}
+.mode-sub{display:block;font-size:9px;opacity:.5;margin-top:2px}
+.swatches{display:flex;gap:14px;align-items:center}
+.swatch{
+  width:38px;height:38px;border-radius:50%;cursor:pointer;
+  border:2px solid transparent;
+  transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease;flex-shrink:0;
+}
+.swatch:hover{transform:scale(1.15)}
+.swatch.active{border-color:rgba(255,255,255,.55);box-shadow:0 0 12px rgba(255,255,255,.12)}
+.audio-btn{
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);
+  color:rgba(255,255,255,.45);font-family:'Courier New',monospace;
+  font-size:11px;padding:10px 13px;border-radius:6px;cursor:pointer;
+  transition:all .2s ease;width:100%;text-align:left;
+}
+.audio-btn.active{background:rgba(179,157,219,.12);border-color:rgba(179,157,219,.35);color:#b39ddb}
+.mixer-item{display:flex;align-items:center;gap:12px}
+.mx-lbl{font-size:10px;color:rgba(255,255,255,.35);width:56px;flex-shrink:0}
+input[type=range].mx-sl{
+  -webkit-appearance:none;appearance:none;flex:1;height:2px;
+  background:rgba(255,255,255,.1);border-radius:2px;outline:none;cursor:pointer;
+}
+input[type=range].mx-sl::-webkit-slider-thumb{
+  -webkit-appearance:none;width:13px;height:13px;border-radius:50%;
+  background:#b39ddb;cursor:pointer;
+}
+input[type=range].mx-sl::-moz-range-thumb{
+  width:13px;height:13px;border-radius:50%;background:#b39ddb;border:none;cursor:pointer;
+}
+.sep{height:1px;background:rgba(255,255,255,.05)}
+.info-txt{font-size:10px;color:rgba(255,255,255,.22);line-height:1.65}
+#pearl-count{font-size:10px;color:rgba(255,255,255,.28)}
+</style>
+</head>
+<body>
+
+<canvas id="nebula-canvas"></canvas>
+
+<svg id="grain-overlay" xmlns="http://www.w3.org/2000/svg">
+  <filter id="gf" x="0%" y="0%" width="100%" height="100%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+    <feColorMatrix type="saturate" values="0"/>
+  </filter>
+  <rect width="100%" height="100%" filter="url(#gf)"/>
+</svg>
+
+<div id="pull-tab"><span id="pull-tab-text">Tune the Universe</span></div>
+
+<div id="dashboard">
+  <div class="db-hd">
+    <div class="db-title">Lofi Pastel <em>Nebula</em></div>
+    <button id="close-btn">✕</button>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="ctrl-lbl">Interaction Mode</div>
+    <button class="mode-btn active" data-mode="paintbrush">
+      01 — Paintbrush
+      <span class="mode-sub">Gravitational silk attractor near cursor</span>
+    </button>
+    <button class="mode-btn" data-mode="pearls">
+      02 — Pearl Anchors
+      <span class="mode-sub">Click to spawn / remove orbital vortex nodes</span>
+    </button>
+    <button class="mode-btn" data-mode="ripple">
+      03 — Tidal Ripple
+      <span class="mode-sub">Click to detonate expanding shockwaves</span>
+    </button>
+    <div id="pearl-count">Pearls: 0 / 6</div>
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="ctrl-group">
+    <div class="ctrl-lbl">Chromatic Palette</div>
+    <div class="swatches">
+      <div class="swatch active" data-palette="lavender"
+        style="background:radial-gradient(circle at 35% 35%,#c9b8e8,#3a2a6a)" title="Lavender Dreams"></div>
+      <div class="swatch" data-palette="peach"
+        style="background:radial-gradient(circle at 35% 35%,#ffcc80,#7c2a18)" title="Peach Sunset"></div>
+      <div class="swatch" data-palette="matcha"
+        style="background:radial-gradient(circle at 35% 35%,#dce8b0,#223010)" title="Matcha Latte"></div>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="ctrl-group">
+    <div class="ctrl-lbl">Audio Engine</div>
+    <button class="audio-btn" id="audio-btn">&#9654; Initialize Audio</button>
+  </div>
+
+  <div class="ctrl-group">
+    <div class="ctrl-lbl">Mixer</div>
+    <div class="mixer-item">
+      <span class="mx-lbl">Ambient</span>
+      <input type="range" class="mx-sl" id="sl-pad" min="0" max="1" step="0.01" value="0.6">
+    </div>
+    <div class="mixer-item">
+      <span class="mx-lbl">Rain</span>
+      <input type="range" class="mx-sl" id="sl-rain" min="0" max="1" step="0.01" value="0.4">
+    </div>
+    <div class="mixer-item">
+      <span class="mx-lbl">Crackle</span>
+      <input type="range" class="mx-sl" id="sl-crackle" min="0" max="1" step="0.01" value="0.3">
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="info-txt">
+    Move your cursor to trace silk ribbons. Open Pearl Anchors and click the canvas to spawn orbital nodes — click a pearl again to remove it. Tidal Ripple detonates expanding shockwaves that implode back to origin.
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ─── PALETTES ────────────────────────────────────────────────────────────────
+const PALETTES = {
+  lavender: {
+    bg:'#0f0f1e', bgR:15, bgG:15, bgB:30,
+    accent:'#b39ddb', accentRgb:'179,157,219',
+    particles:['#c9b8e8','#b39ddb','#a5d6a7','#b0c4de','#80cbc4','#9fa8da','#ce93d8']
+  },
+  peach: {
+    bg:'#181414', bgR:24, bgG:20, bgB:20,
+    accent:'#ffab91', accentRgb:'255,171,145',
+    particles:['#f48fb1','#ff8a65','#ffcc80','#f06292','#ffd54f','#ffab91','#e57373']
+  },
+  matcha: {
+    bg:'#121412', bgR:18, bgG:20, bgB:18,
+    accent:'#c5e1a5', accentRgb:'197,225,165',
+    particles:['#a5d6a7','#f5f5dc','#b8cc78','#e6e6a0','#c5e1a5','#dce8b0','#aab060']
+  }
+};
+
+let palette = PALETTES.lavender;
+
+// ─── CANVAS ──────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('nebula-canvas');
+const ctx    = canvas.getContext('2d');
+let W = 0, H = 0, dpr = 1;
+
+function resizeCanvas() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W   = window.innerWidth;
+  H   = window.innerHeight;
+  canvas.width        = Math.floor(W * dpr);
+  canvas.height       = Math.floor(H * dpr);
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, W, H);
+  scatterParticles();
+}
+
+// ─── PARTICLE POOL ───────────────────────────────────────────────────────────
+const POOL = 3500;
+
+// Pre-allocate all particle objects once — zero GC pressure in loop
+const particles = new Array(POOL);
+for (let i = 0; i < POOL; i++) {
+  particles[i] = { x:0, y:0, vx:0, vy:0, ax:0, ay:0, size:1, colorIdx:0, baseAlpha:0.5, alpha:0.5 };
+}
+
+let colorBank = palette.particles.slice();
+
+function initParticles() {
+  colorBank = palette.particles.slice();
+  const nc = colorBank.length;
+  for (let i = 0; i < POOL; i++) {
+    const p    = particles[i];
+    p.x        = Math.random() * W;
+    p.y        = Math.random() * H;
+    p.vx       = (Math.random() - 0.5) * 0.5;
+    p.vy       = (Math.random() - 0.5) * 0.5;
+    p.ax       = 0;
+    p.ay       = 0;
+    p.size     = Math.random() * 2.2 + 0.35;
+    p.colorIdx = Math.floor(Math.random() * nc);
+    p.baseAlpha = Math.random() * 0.45 + 0.2;
+    p.alpha    = p.baseAlpha;
+  }
+  // Sort by colorIdx so fillStyle changes only N_colors times per frame
+  particles.sort((a, b) => a.colorIdx - b.colorIdx);
+}
+
+function scatterParticles() {
+  for (let i = 0; i < POOL; i++) {
+    particles[i].x = Math.random() * W;
+    particles[i].y = Math.random() * H;
+  }
+}
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let mode = 'paintbrush';
+const mouse = { x:0, y:0, active:false };
+
+// Pearl anchors — flat parallel arrays, no heap alloc per pearl
+const MAX_PEARLS = 6;
+const pearlX = new Float32Array(MAX_PEARLS);
+const pearlY = new Float32Array(MAX_PEARLS);
+let pearlCount = 0;
+const PEARL_R   = 182;
+const PEARL_STR = 2.6;
+
+// Tidal ripples
+const MAX_RIPS = 8;
+const ripX  = new Float32Array(MAX_RIPS);
+const ripY  = new Float32Array(MAX_RIPS);
+const ripR  = new Float32Array(MAX_RIPS);
+const ripMR = new Float32Array(MAX_RIPS);
+const ripPh = new Int32Array(MAX_RIPS);   // 0=expand 1=implode
+const ripSp = new Float32Array(MAX_RIPS);
+let ripCount = 0;
+
+// ─── INPUT ───────────────────────────────────────────────────────────────────
+function canvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  if (e.touches) return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+canvas.addEventListener('mousemove', e => {
+  const p = canvasPos(e); mouse.x = p.x; mouse.y = p.y; mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const p = canvasPos(e); mouse.x = p.x; mouse.y = p.y; mouse.active = true;
+}, { passive:false });
+canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+function handleAction(cx, cy) {
+  if (mode === 'pearls') {
+    // Check for removal within 24px of existing pearl
+    for (let i = 0; i < pearlCount; i++) {
+      const dx = pearlX[i] - cx, dy = pearlY[i] - cy;
+      if (dx*dx + dy*dy < 576) {
+        for (let j = i; j < pearlCount - 1; j++) {
+          pearlX[j] = pearlX[j+1]; pearlY[j] = pearlY[j+1];
+        }
+        pearlCount--;
+        updatePearlUI();
+        return;
+      }
+    }
+    if (pearlCount < MAX_PEARLS) {
+      pearlX[pearlCount] = cx; pearlY[pearlCount] = cy;
+      pearlCount++;
+      updatePearlUI();
+      triggerChime();
+    }
+  } else if (mode === 'ripple') {
+    if (ripCount < MAX_RIPS) {
+      const maxR = Math.sqrt(W*W + H*H) * 0.65;
+      ripX[ripCount] = cx; ripY[ripCount] = cy;
+      ripR[ripCount] = 10; ripMR[ripCount] = maxR;
+      ripPh[ripCount] = 0; ripSp[ripCount] = 3.5;
+      ripCount++;
+      triggerChime();
+    }
+  }
+}
+
+canvas.addEventListener('click', e => { const p = canvasPos(e); handleAction(p.x, p.y); });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const p = canvasPos(e);
+  mouse.x = p.x; mouse.y = p.y; mouse.active = true;
+  handleAction(p.x, p.y);
+}, { passive:false });
+
+function updatePearlUI() {
+  document.getElementById('pearl-count').textContent = `Pearls: ${pearlCount} / 6`;
+}
+
+// ─── PHYSICS ─────────────────────────────────────────────────────────────────
+const FRICTION = 0.965;
+const MAX_SPD  = 4.5;
+
+function updateParticles() {
+  const paint  = mode === 'paintbrush';
+  const pearls = mode === 'pearls';
+  const ripple = mode === 'ripple';
+  const mx = mouse.x, my = mouse.y, ma = mouse.active;
+
+  for (let i = 0; i < POOL; i++) {
+    const p = particles[i];
+    let ax = 0, ay = 0;
+
+    if (paint && ma) {
+      const dx = mx - p.x, dy = my - p.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < 122500 && d2 > 1) {            // 350² = 122500
+        const d   = Math.sqrt(d2);
+        const att = (1 - d / 350) * 0.072;
+        ax += dx / d * att;
+        ay += dy / d * att;
+      }
+    }
+
+    if (pearls) {
+      for (let j = 0; j < pearlCount; j++) {
+        const dx = pearlX[j] - p.x, dy = pearlY[j] - p.y;
+        const d2 = dx*dx + dy*dy;
+        if (d2 < PEARL_R * PEARL_R && d2 > 16) {
+          const d  = Math.sqrt(d2);
+          const t  = 1 - d / PEARL_R;
+          // Radial gravity pull
+          const gv = PEARL_STR * 0.013 * t;
+          ax += dx / d * gv;
+          ay += dy / d * gv;
+          // Perpendicular tangential orbital force (CCW)
+          const ov = PEARL_STR * 0.009 * t;
+          ax += -dy / d * ov;
+          ay +=  dx / d * ov;
+        }
+      }
+    }
+
+    if (ripple) {
+      for (let r = 0; r < ripCount; r++) {
+        const dx    = p.x - ripX[r], dy = p.y - ripY[r];
+        const d     = Math.sqrt(dx*dx + dy*dy);
+        const front = Math.abs(d - ripR[r]);
+        if (front < 45 && d > 1) {
+          const dir = ripPh[r] === 0 ? 1 : -1;
+          const mag = (1 - front / 45) * 0.58 * dir;
+          ax += dx / d * mag;
+          ay += dy / d * mag;
+        }
+      }
+    }
+
+    p.vx = (p.vx + ax) * FRICTION;
+    p.vy = (p.vy + ay) * FRICTION;
+
+    const spd = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+    if (spd > MAX_SPD) { p.vx = p.vx / spd * MAX_SPD; p.vy = p.vy / spd * MAX_SPD; }
+
+    p.x += p.vx; p.y += p.vy;
+
+    // Wrap edges
+    if      (p.x < -10)    p.x = W + 10;
+    else if (p.x > W + 10) p.x = -10;
+    if      (p.y < -10)    p.y = H + 10;
+    else if (p.y > H + 10) p.y = -10;
+
+    // Alpha breathes with speed
+    const s2 = spd;
+    p.alpha = Math.min(p.baseAlpha + s2 * 0.09, 0.96);
+  }
+}
+
+function updateRipples() {
+  for (let r = ripCount - 1; r >= 0; r--) {
+    if (ripPh[r] === 0) {
+      ripR[r] += ripSp[r];
+      if (ripR[r] >= ripMR[r]) { ripPh[r] = 1; ripSp[r] = 4.8; }
+    } else {
+      ripR[r] -= ripSp[r];
+      if (ripR[r] <= 0) {
+        for (let k = r; k < ripCount - 1; k++) {
+          ripX[k]=ripX[k+1]; ripY[k]=ripY[k+1]; ripR[k]=ripR[k+1];
+          ripMR[k]=ripMR[k+1]; ripPh[k]=ripPh[k+1]; ripSp[k]=ripSp[k+1];
+        }
+        ripCount--;
+      }
+    }
+  }
+}
+
+// ─── RENDER ──────────────────────────────────────────────────────────────────
+const TWO_PI = Math.PI * 2;
+
+function render() {
+  // Watercolor trail: alpha-fill accumulation instead of clearRect
+  ctx.fillStyle = `rgba(${palette.bgR},${palette.bgG},${palette.bgB},0.08)`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw particles — sorted by colorIdx so fillStyle changes only per-color
+  let lastCI = -1;
+  for (let i = 0; i < POOL; i++) {
+    const p = particles[i];
+    if (p.colorIdx !== lastCI) {
+      ctx.fillStyle = colorBank[p.colorIdx];
+      lastCI = p.colorIdx;
+    }
+    ctx.globalAlpha = p.alpha;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, TWO_PI);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+
+  // Pearl visuals
+  if (mode === 'pearls' && pearlCount > 0) {
+    const rgb = palette.accentRgb;
+    for (let j = 0; j < pearlCount; j++) {
+      const grd = ctx.createRadialGradient(pearlX[j], pearlY[j], 0, pearlX[j], pearlY[j], 15);
+      grd.addColorStop(0, `rgba(${rgb},0.95)`);
+      grd.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.beginPath();
+      ctx.arc(pearlX[j], pearlY[j], 15, 0, TWO_PI);
+      ctx.fillStyle = grd;
+      ctx.fill();
+      // Influence ring
+      ctx.beginPath();
+      ctx.arc(pearlX[j], pearlY[j], PEARL_R, 0, TWO_PI);
+      ctx.strokeStyle = `rgba(${rgb},0.07)`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  // Ripple rings
+  if (mode === 'ripple' && ripCount > 0) {
+    const rgb = palette.accentRgb;
+    for (let r = 0; r < ripCount; r++) {
+      const alpha = ripPh[r] === 0 ? 0.22 : 0.13;
+      ctx.beginPath();
+      ctx.arc(ripX[r], ripY[r], ripR[r], 0, TWO_PI);
+      ctx.strokeStyle = `rgba(${rgb},${alpha})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (ripR[r] > 46) {
+        ctx.beginPath();
+        ctx.arc(ripX[r], ripY[r], ripR[r] - 45, 0, TWO_PI);
+        ctx.strokeStyle = `rgba(${rgb},${(alpha * 0.35).toFixed(3)})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// ─── ANIMATION LOOP ──────────────────────────────────────────────────────────
+function loop() {
+  updateParticles();
+  updateRipples();
+  render();
+  requestAnimationFrame(loop);
+}
+
+// ─── WEB AUDIO DSP ───────────────────────────────────────────────────────────
+let actx         = null;
+let masterGain   = null;
+let padGain      = null;
+let rainGain     = null;
+let crackleGain  = null;
+let chimeDelay   = null;
+let chimeFB      = null;
+let audioActive  = false;
+let crackleTO    = null;
+
+const PENTATONIC = [261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25,784.00,880.00];
+
+function buildAudio() {
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+
+  masterGain = actx.createGain();
+  masterGain.gain.value = 1;
+  masterGain.connect(actx.destination);
+
+  padGain = actx.createGain();
+  padGain.gain.value = +document.getElementById('sl-pad').value;
+  padGain.connect(masterGain);
+
+  rainGain = actx.createGain();
+  rainGain.gain.value = +document.getElementById('sl-rain').value;
+  rainGain.connect(masterGain);
+
+  crackleGain = actx.createGain();
+  crackleGain.gain.value = +document.getElementById('sl-crackle').value;
+  crackleGain.connect(masterGain);
+
+  // Chime spatial echo — feedback delay loop
+  chimeDelay = actx.createDelay(1.0);
+  chimeDelay.delayTime.value = 0.36;
+  chimeFB = actx.createGain();
+  chimeFB.gain.value = 0.42;
+  chimeDelay.connect(chimeFB);
+  chimeFB.connect(chimeDelay);
+  chimeDelay.connect(masterGain);
+
+  // ── Ambient pad: 4 triangle OSCs → shared low-pass filter ──
+  // D Major 7th/9th voicing: D2, A2, C#3, E3
+  const padFreqs = [146.83, 220.00, 277.18, 329.63];
+  const padLPF   = actx.createBiquadFilter();
+  padLPF.type           = 'lowpass';
+  padLPF.frequency.value = 450;
+  padLPF.Q.value         = 4;
+  padLPF.connect(padGain);
+
+  // Sub-audio LFO modulates filter cutoff — organic drift
+  const lfo    = actx.createOscillator();
+  lfo.type          = 'sine';
+  lfo.frequency.value = 0.06;
+  const lfoAmt = actx.createGain();
+  lfoAmt.gain.value = 190;
+  lfo.connect(lfoAmt);
+  lfoAmt.connect(padLPF.frequency);
+  lfo.start();
+
+  padFreqs.forEach(f => {
+    const osc = actx.createOscillator();
+    osc.type          = 'triangle';
+    osc.frequency.value = f;
+    const og = actx.createGain();
+    og.gain.value = 0.175;
+    osc.connect(og);
+    og.connect(padLPF);
+    osc.start();
+  });
+
+  // ── Brownian noise rain (2-second looping buffer) ──
+  const sr      = actx.sampleRate;
+  const rainBuf = actx.createBuffer(1, sr * 2, sr);
+  const rd      = rainBuf.getChannelData(0);
+  let last      = 0;
+  for (let i = 0; i < sr * 2; i++) {
+    // Integrate white noise with drift correction
+    last    = Math.max(-1, Math.min(1, (last + (Math.random() * 2 - 1) * 0.1) * 0.998));
+    rd[i]   = last;
+  }
+  const rainLPF = actx.createBiquadFilter();
+  rainLPF.type           = 'lowpass';
+  rainLPF.frequency.value = 380;
+  rainLPF.Q.value         = 1.2;
+  rainLPF.connect(rainGain);
+
+  const rainSrc = actx.createBufferSource();
+  rainSrc.buffer = rainBuf;
+  rainSrc.loop   = true;
+  rainSrc.connect(rainLPF);
+  rainSrc.start();
+}
+
+function scheduleCrackle() {
+  if (!audioActive) return;
+  crackleTO = setTimeout(() => {
+    if (audioActive) { fireCrackle(); scheduleCrackle(); }
+  }, Math.random() * 400 + 75);
+}
+
+function fireCrackle() {
+  if (!actx) return;
+  // Short micro-impulse: high-frequency pop simulating vinyl dust
+  const n   = Math.floor(actx.sampleRate * 0.013);
+  const buf = actx.createBuffer(1, n, actx.sampleRate);
+  const d   = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) {
+    d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (n * 0.11));
+  }
+  const src = actx.createBufferSource();
+  src.buffer = buf;
+  const hp  = actx.createBiquadFilter();
+  hp.type           = 'highpass';
+  hp.frequency.value = 7000;
+  const env = actx.createGain();
+  env.gain.value = Math.random() * 0.32 + 0.06;
+  src.connect(hp);
+  hp.connect(env);
+  env.connect(crackleGain);
+  src.start();
+}
+
+function triggerChime() {
+  if (!actx || !audioActive) return;
+  const freq = PENTATONIC[Math.floor(Math.random() * PENTATONIC.length)];
+  const osc  = actx.createOscillator();
+  osc.type           = 'sine';
+  osc.frequency.value = freq;
+  const g   = actx.createGain();
+  const now = actx.currentTime;
+  g.gain.setValueAtTime(0.46, now);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 1.9);
+  osc.connect(g);
+  g.connect(chimeDelay);
+  g.connect(masterGain);
+  osc.start(now);
+  osc.stop(now + 2.1);
+}
+
+function startAudio() {
+  if (!actx) buildAudio();
+  else if (actx.state === 'suspended') actx.resume();
+  audioActive = true;
+  scheduleCrackle();
+}
+
+function stopAudio() {
+  audioActive = false;
+  if (crackleTO) { clearTimeout(crackleTO); crackleTO = null; }
+  if (actx && actx.state === 'running') actx.suspend();
+}
+
+// ─── ACCENT STYLE INJECTION ──────────────────────────────────────────────────
+function applyAccent(hex, rgb) {
+  let el = document.getElementById('dyn-acc');
+  if (!el) { el = document.createElement('style'); el.id = 'dyn-acc'; document.head.appendChild(el); }
+  el.textContent =
+    `.mode-btn.active{background:rgba(${rgb},.12)!important;border-color:rgba(${rgb},.35)!important;color:${hex}!important}` +
+    `.audio-btn.active{background:rgba(${rgb},.12)!important;border-color:rgba(${rgb},.35)!important;color:${hex}!important}` +
+    `input[type=range].mx-sl::-webkit-slider-thumb{background:${hex}!important}` +
+    `input[type=range].mx-sl::-moz-range-thumb{background:${hex}!important}` +
+    `#pull-tab{background:rgba(${rgb},.6)!important}` +
+    `.db-title em{color:${hex}!important}`;
+}
+
+// ─── UI WIRING ───────────────────────────────────────────────────────────────
+const pullTab  = document.getElementById('pull-tab');
+const dashboard = document.getElementById('dashboard');
+
+pullTab.addEventListener('click', () => {
+  dashboard.classList.add('open');
+  pullTab.style.opacity = '0';
+  pullTab.style.pointerEvents = 'none';
+});
+
+document.getElementById('close-btn').addEventListener('click', () => {
+  dashboard.classList.remove('open');
+  pullTab.style.opacity = '1';
+  pullTab.style.pointerEvents = 'auto';
+});
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    mode = btn.dataset.mode;
+    if (mode !== 'pearls') pearlCount = 0;
+    if (mode !== 'ripple') ripCount   = 0;
+    updatePearlUI();
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+
+document.querySelectorAll('.swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    palette   = PALETTES[sw.dataset.palette];
+    colorBank = palette.particles.slice();
+    document.body.style.background = palette.bg;
+    const nc  = colorBank.length;
+    for (let i = 0; i < POOL; i++) particles[i].colorIdx = Math.floor(Math.random() * nc);
+    particles.sort((a, b) => a.colorIdx - b.colorIdx);
+    // Hard-fill background with new color to clear trail artifacts
+    ctx.fillStyle = palette.bg;
+    ctx.fillRect(0, 0, W, H);
+    applyAccent(palette.accent, palette.accentRgb);
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+  });
+});
+
+const audioBtn = document.getElementById('audio-btn');
+audioBtn.addEventListener('click', () => {
+  if (!audioActive) {
+    startAudio();
+    audioBtn.textContent = '⏸ Audio Running';
+    audioBtn.classList.add('active');
+  } else {
+    stopAudio();
+    audioBtn.textContent = '▶ Initialize Audio';
+    audioBtn.classList.remove('active');
+  }
+});
+
+document.getElementById('sl-pad').addEventListener('input', e => {
+  if (padGain) padGain.gain.value = +e.target.value;
+});
+document.getElementById('sl-rain').addEventListener('input', e => {
+  if (rainGain) rainGain.gain.value = +e.target.value;
+});
+document.getElementById('sl-crackle').addEventListener('input', e => {
+  if (crackleGain) crackleGain.gain.value = +e.target.value;
+});
+
+window.addEventListener('resize', resizeCanvas);
+
+// ─── BOOT ────────────────────────────────────────────────────────────────────
+resizeCanvas();
+initParticles();
+loop();
+</script>
+</body>
+</html>
